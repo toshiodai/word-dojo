@@ -16,7 +16,7 @@ const BADGES=[
   {id:"juunin",emoji:"🏯",label:"道場の住人",desc:"7日連続で稽古する"},
   {id:"shokeiko",emoji:"🥋",label:"初稽古",desc:"見習い部員になって初めて1ラウンドをプレイする"},
   {id:"fukutsu",emoji:"💪",label:"不屈の心",desc:"同じ単語を3回間違えた後に正解する"},
-  {id:"sokkou",emoji:"⚡",label:"速攻の一撃",desc:"タイピングモードで10秒以内に正解する"},
+  {id:"sokkou",emoji:"⚡",label:"速攻の一撃",desc:"タイピングモードで10問の平均解答時間が10秒以内(7問以上正解)"},
   {id:"collector",emoji:"⭐",label:"語彙コレクター",desc:"My Dictionaryに20語保存する"},
   {id:"walking_dict",emoji:"📖",label:"歩く英和辞書",desc:"My Dictionaryに100語保存する"},
   {id:"shihan_road",emoji:"👑",label:"師範への道",desc:"最高階級「師範」に到達する"},
@@ -271,6 +271,7 @@ export default function App(){
   const[badgesOpen,setBadgesOpen]=useState(false);
   const wrongStreakRef=useRef({});
   const qStartRef=useRef(Date.now());
+  const roundAnswerTimesRef=useRef([]);
   function awardBadge(id){
     setEarnedBadges(prev=>{
       if(prev.includes(id))return prev;
@@ -357,6 +358,10 @@ export default function App(){
     const ns=Math.min(STAGE_THRESH.filter(t=>nt>=t).length-1,STAGES.length-1);
     if(ns>stageIdx)setShowPromo(true);
     if(wrong===0)awardBadge("ippon");
+    if(mode==="ja-en"&&roundAnswerTimesRef.current.length>=10&&correct>=7){
+      const avg=roundAnswerTimesRef.current.reduce((a,b)=>a+b,0)/roundAnswerTimesRef.current.length;
+      if(avg<=10000)awardBadge("sokkou");
+    }
     if(ns>=3)awardBadge("shokeiko");
     if(ns>=STAGES.length-1)awardBadge("shihan_road");
     setTotalCorrect(nt);
@@ -390,6 +395,7 @@ export default function App(){
     setShowPromo(false);
     wrongStreakRef.current={};
     qStartRef.current=Date.now();
+    roundAnswerTimesRef.current=[];
     try{
       const key=todayKey();
       let ds=JSON.parse(localStorage.getItem("dojo_playdates")||"[]");
@@ -551,10 +557,10 @@ export default function App(){
     const ok=input.replace(/[^a-zA-Z]/g,"").toLowerCase()===ans;
     setStatus(ok?"correct":"wrong");
     beep(ok);setTimeout(()=>speak(cw.en),ok?550:500);
+    roundAnswerTimesRef.current=[...roundAnswerTimesRef.current,Date.now()-qStartRef.current];
     if(ok){
       setCorrect(c=>c+1);setDots(d=>[...d,"c"]);
       if((wrongStreakRef.current[cw.en]||0)>=3)awardBadge("fukutsu");
-      if(Date.now()-qStartRef.current<10000)awardBadge("sokkou");
       wrongStreakRef.current[cw.en]=0;
     }
     else{setWrong(w=>w+1);setDots(d=>[...d,"w"]);setMissed(m=>[...m,cw]);wrongStreakRef.current[cw.en]=(wrongStreakRef.current[cw.en]||0)+1;}
@@ -890,7 +896,7 @@ export default function App(){
               <div style={{fontSize:12,color:"#f5a623",fontWeight:700,letterSpacing:".1em",marginBottom:8}}>バッジ獲得！</div>
               <div style={{fontSize:56,lineHeight:1,marginBottom:8}}>{BADGES.find(b=>b.id===newBadge)?.emoji}</div>
               <div style={{fontSize:18,fontWeight:700,marginBottom:6}}>{BADGES.find(b=>b.id===newBadge)?.label}</div>
-              <div style={{fontSize:13,color:"#888",marginBottom:16}}>{BADGES.find(b=>b.id===newBadge)?.desc}</div>
+              <div style={{fontSize:13,color:"#888",marginBottom:16}}><span style={{color:"#aaa"}}>条件：</span>{BADGES.find(b=>b.id===newBadge)?.desc}</div>
               <button className="pbtn" onClick={()=>setNewBadge(null)}>とじる</button>
             </div>
           </div>
@@ -904,6 +910,9 @@ export default function App(){
                 <button className="dict-close" onClick={()=>setBadgesOpen(false)}>✕</button>
               </div>
               <div style={{padding:"4px 4px 16px",overflowY:"auto"}}>
+                <div style={{fontSize:13,color:"#666",lineHeight:1.6,padding:"8px 12px 16px"}}>
+                  稽古を続けて条件を満たすと、バッジがもらえます。バッジの獲得条件は、獲得するまで「？？？？？？」で隠されています。すべてのバッジを集めて、道場の達人を目指そう！
+                </div>
                 {BADGES.map(b=>{
                   const got=earnedBadges.includes(b.id);
                   return (
