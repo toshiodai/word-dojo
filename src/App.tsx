@@ -671,7 +671,7 @@ export default function App(){
           </div>
           <div className="card" style={{marginTop:8,padding:"10px 8px",cursor:"pointer"}} onClick={()=>setBadgesOpen(true)}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-              <span style={{fontSize:13,fontWeight:700,color:"#555"}}>🏅 バッジ ({earnedBadges.length}/{BADGES.length})</span>
+              <span style={{fontSize:13,fontWeight:700,color:"#555"}}>🏅 バッジ一覧 ({earnedBadges.length}/{BADGES.length})</span>
               <span style={{fontSize:12,color:"#aaa"}}>すべて見る ›</span>
             </div>
             <div style={{display:"flex",gap:4,justifyContent:"space-between"}}>
