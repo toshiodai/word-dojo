@@ -1,64 +1,50 @@
-// iOS / iPadOS Safari で Web Speech API の cancel() 直後に speak() すると
-// 発話が開始されないことがあるため、発音処理をここで直列化します。
-let speechTimer: ReturnType<typeof setTimeout> | null = null;
-let speechToken = 0;
+// iPhone / iPad Safari で speechSynthesis.cancel() の直後に speak() すると
+// 発話が開始されないことがあるため、アプリ全体の Web Speech API を安定化します。
+// App.tsx を巨大なまま直接編集せず、既存の発音コードすべてに適用します。
 
-export type StableSpeakOptions = {
-  lang?: string;
-  rate?: number;
-  onBoundary?: (event: SpeechSynthesisEvent) => void;
-  onEnd?: () => void;
-};
+let installed = false;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let requestId = 0;
 
-export function stopSpeech() {
-  speechToken += 1;
-  if (speechTimer) {
-    clearTimeout(speechTimer);
-    speechTimer = null;
-  }
-  if (typeof window !== "undefined" && "speechSynthesis" in window) {
-    window.speechSynthesis.cancel();
-  }
-}
-
-export function stableSpeak(text: string, options: StableSpeakOptions = {}) {
-  if (!text || typeof window === "undefined" || !("speechSynthesis" in window)) {
-    options.onEnd?.();
-    return;
-  }
+export function installStableSpeechPatch() {
+  if (installed || typeof window === "undefined" || !("speechSynthesis" in window)) return;
+  installed = true;
 
   const synth = window.speechSynthesis;
-  const token = ++speechToken;
+  const nativeSpeak = synth.speak.bind(synth);
+  const nativeCancel = synth.cancel.bind(synth);
+  const nativeResume = synth.resume.bind(synth);
 
-  if (speechTimer) clearTimeout(speechTimer);
-  synth.cancel();
+  // 既存コードの cancel() はそのまま尊重しつつ、待機中の発話も確実に破棄します。
+  synth.cancel = (() => {
+    requestId += 1;
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      pendingTimer = null;
+    }
+    nativeCancel();
+  }) as typeof synth.cancel;
 
-  // cancel() と speak() を同一イベントループで続けない。
-  // iOS Safari ではこの短い待ち時間が発話抜けを大幅に減らす。
-  speechTimer = setTimeout(() => {
-    if (token !== speechToken) return;
+  // 既存の全 speak() をここで受け、cancel() と同一タイミングで発話しないようにします。
+  synth.speak = ((utterance: SpeechSynthesisUtterance) => {
+    const id = ++requestId;
+    if (pendingTimer) clearTimeout(pendingTimer);
 
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = options.lang ?? "en-US";
-    utterance.rate = options.rate ?? 0.9;
-    if (options.onBoundary) utterance.onboundary = options.onBoundary;
+    pendingTimer = setTimeout(() => {
+      pendingTimer = null;
+      if (id !== requestId) return;
 
-    let ended = false;
-    const finish = () => {
-      if (ended || token !== speechToken) return;
-      ended = true;
-      options.onEnd?.();
-    };
-    utterance.onend = finish;
-    utterance.onerror = finish;
+      // iOS Safari が paused 状態を保持している場合に復帰させます。
+      nativeResume();
+      nativeSpeak(utterance);
 
-    synth.resume();
-    synth.speak(utterance);
-
-    // Safari が稀に queued のまま止まった場合の復帰。
-    setTimeout(() => {
-      if (token !== speechToken || ended) return;
-      if (synth.paused) synth.resume();
-    }, 350);
-  }, 120);
+      // 稀に queued/paused のまま止まるケースへの保険。
+      setTimeout(() => {
+        if (id !== requestId) return;
+        if (synth.paused) nativeResume();
+      }, 350);
+    }, 120);
+  }) as typeof synth.speak;
 }
+
+installStableSpeechPatch();
